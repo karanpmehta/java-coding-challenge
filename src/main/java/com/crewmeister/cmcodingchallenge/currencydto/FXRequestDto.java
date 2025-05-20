@@ -16,8 +16,9 @@ public class FXRequestDto {
     @NotNull(message = "Currency is required")
     private CurrencyConstants currency;
 
+    @NotNull
     @Positive(message = "Amount must be a positive number")
-    private double amount;
+    private Double amount;
 
     public LocalDate getDate() {
         return date;

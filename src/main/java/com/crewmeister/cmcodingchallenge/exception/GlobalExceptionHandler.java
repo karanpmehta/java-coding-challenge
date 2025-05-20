@@ -1,9 +1,15 @@
 package com.crewmeister.cmcodingchallenge.exception;
 
 import com.crewmeister.cmcodingchallenge.currency.CurrencyConstants;
+
+import com.crewmeister.cmcodingchallenge.currencycontroller.CurrencyController;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.core.convert.ConversionFailedException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.validation.BindException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
@@ -17,6 +23,8 @@ import java.util.Map;
 @ControllerAdvice
 public class GlobalExceptionHandler {
 
+    private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Object> handleValidationErrors(MethodArgumentNotValidException ex) {
         Map<String, String> errors = new HashMap<>();
@@ -28,8 +36,23 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(errors, HttpStatus.BAD_REQUEST);
     }
 
+    @ExceptionHandler({BindException.class})
+    public ResponseEntity<Map<String, String>> handleBindExceptions(BindException ex) {
+        logger.error("Validation failed", ex);
+        Map<String, String> errors = new HashMap<>();
+        ex.getBindingResult().getFieldErrors().forEach(error -> {
+        if ("date".equals(error.getField()) && error.getRejectedValue() != null) {
+            errors.put("date", "Date must be a LocalDate in format yyyy-MM-dd");
+        } else {
+            errors.put(error.getField(), error.getDefaultMessage());
+        }
+    });
+        return new ResponseEntity<>(errors, HttpStatus.BAD_REQUEST);
+    }
+
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<Object> handleInvalidInput(HttpMessageNotReadableException ex) {
+        logger.error("Validation failed", ex);
         Map<String, Object> response = new HashMap<>();
         response.put("status", HttpStatus.BAD_REQUEST.value());
         response.put("error", "Invalid json input");
@@ -51,19 +74,24 @@ public class GlobalExceptionHandler {
                 .body(Map.of("error", ex.getMessage()));
     }
 
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Object> handleIllegalArguments(IllegalArgumentException ex) {
+        return ResponseEntity
+                .badRequest()
+                .body(Map.of("error", ex.getMessage()));
+    }
+
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
-    public ResponseEntity<Map<String, String>> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
-        if (ex.getRequiredType() == CurrencyConstants.class) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("error", "Invalid currency as allowed values are not valid currencies"));
-        }
+    public ResponseEntity<Object> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        String error = String.format("Invalid value '%s' for parameter '%s'. Expected type: %s",
+                ex.getValue(), ex.getName(), ex.getRequiredType().getSimpleName());
+        return new ResponseEntity<>(Map.of("error", error), HttpStatus.BAD_REQUEST);
+    }
 
-        if (ex.getRequiredType() == LocalDate.class) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("error", "Date must be in format yyyy-MM-dd"));
-        }
-
-        return ResponseEntity.badRequest()
-                .body(Map.of("error", "Invalid parameter: " + ex.getName()));
+    @ExceptionHandler(RuntimeException.class)
+    public ResponseEntity<Object> handleRuntimeException(RuntimeException ex) {
+        Map<String, String> error = new HashMap<>();
+        error.put("error", ex.getMessage());
+        return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
     }
 }

@@ -2,27 +2,35 @@ package com.crewmeister.cmcodingchallenge.currencyservice;
 
 import com.crewmeister.cmcodingchallenge.currency.CurrencyConstants;
 import com.crewmeister.cmcodingchallenge.currency.CurrencyConversionRates;
+import com.crewmeister.cmcodingchallenge.currencycontroller.CurrencyController;
+import com.crewmeister.cmcodingchallenge.exception.InvalidRequestException;
 import com.crewmeister.cmcodingchallenge.xmldata.GenericData;
 import com.crewmeister.cmcodingchallenge.currency.Currency;
 import com.crewmeister.cmcodingchallenge.currencyrepository.CurrencyRepository;
 import com.crewmeister.cmcodingchallenge.xmldata.Observation;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
+import org.springframework.retry.annotation.Backoff;
+import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
+import java.net.SocketTimeoutException;
+import java.util.*;
 
 @Service
 public class CurrencyServiceImpl implements CurrencyService {
 
-
+    private static final Logger logger = LoggerFactory.getLogger(CurrencyServiceImpl.class);
     private final RestTemplate restTemplate;
+
+    private static final int RETRY_ATTEMPTS = 3;
+    private static final long DELAY = 2000L;
 
     @Value("${bundesbank.api.base.url}")
     private String bundesBaseUrl;
@@ -54,16 +62,29 @@ public class CurrencyServiceImpl implements CurrencyService {
     }
 
     @Override
-    public Map<String, Map<String, String>> getFXRates(String date) {
-        List<Currency> currencies = currencyRepository.findAll(); //Assuming DB has values; if not insert values from controller
+    public Map<String, Map<String, String>> getFXRates(String date,String currency) {
+        List<Currency> currencies = new ArrayList<>();
+        if(currency==null ||  currency.isEmpty() )
+            currencies= currencyRepository.findAll();//Assuming DB has values; if not insert values from controller
+        else {
+            Optional<Currency> ccy = currencyRepository.findCurrencyName(currency);
+            if(ccy.isPresent())
+                currencies.add(ccy.get());
+            else{
+                throw new RuntimeException("Invalid Currency Name as validated from db");
+            }
+
+        }
         Map<String, Map<String, String>> fxMapResult = new HashMap<>();
         for(Currency fxcurrency: currencies) {
-            System.out.println(fxcurrency.getCurrencyName());
-            String url = buildUrl(bundesBaseUrl,bundesApiKey,bundesApiFormat,bundesApiLang);
-            url=url.replace("XXX",fxcurrency.getCurrencyName());
-            System.out.println("URL is "+url);
-            ResponseEntity<GenericData> response = restTemplate.getForEntity(url, GenericData.class);
-            GenericData genericData = response.getBody();
+            logger.info("Processing currency: {}",fxcurrency.getCurrencyName());
+            String url = buildUrl(fxcurrency.getCurrencyName());
+            logger.info("Requesting FX data from URL: {} ", url);
+            GenericData genericData = fetchRates(url, fxcurrency.getCurrencyName());
+            if (genericData == null || genericData.dataSet == null || genericData.dataSet.series == null) {
+                logger.warn("Received empty response for currency {}", fxcurrency.getCurrencyName());
+                continue;
+            }
             Map<String, String> fxMap = new HashMap<>();
 
 
@@ -92,38 +113,59 @@ public class CurrencyServiceImpl implements CurrencyService {
     @Override
     public double getFXAmount(String date, String currency, double amount) {
 
-        System.out.println(currency);
+        logger.info("Processing currency: {}",currency);
         CurrencyConversionRates ccr = null;
-        UriComponentsBuilder queryParams = UriComponentsBuilder.newInstance();
-        queryParams.queryParam("format","sdmx");
-        queryParams.queryParam("lang","en");
-        String url = buildUrl(bundesBaseUrl,bundesApiKey,bundesApiFormat,bundesApiLang);
-        url=url.replace("XXX",currency);
-        System.out.println("URL is "+url);
-        ResponseEntity<GenericData> response = restTemplate.getForEntity(url, GenericData.class);
-        GenericData genericData = response.getBody();
-
+        String url = buildUrl(currency);
+        logger.info("Requesting FX data from URL: {} ", url);
+        GenericData genericData = fetchRates(url,currency);
+        if (genericData == null || genericData.dataSet == null || genericData.dataSet.series == null) {
+            logger.error("Received empty response for currency {}", currency);
+            throw new RuntimeException("Generic data is unavailable for currency: " + currency);
+        }
         for (Observation obs : genericData.dataSet.series.observations) {
             if (obs.dimension.date.equals(date) && obs.value != null) {
                 ccr = new CurrencyConversionRates(Double.parseDouble(obs.value.rate));
                 break;
             }
         }
-        System.out.println(ccr.getConversionRate());
+
+        if (ccr == null) {
+            throw new IllegalArgumentException("Conversion rate not found for date " + date);
+        }
+        logger.info("Conversion rate for {} on {} is {}",currency,date,ccr.getConversionRate());
         double exchangedAmount = amount/ccr.getConversionRate() ;
 
         return exchangedAmount;
     }
 
-    private String buildUrl(String baseUrl, String pathSegment, String format, String lang) {
+    private String buildUrl(String currencyName) {
+        String apiKey = String.format(bundesApiKey, currencyName);
         return UriComponentsBuilder
-                .fromHttpUrl(baseUrl.endsWith("/") ? baseUrl : baseUrl + "/")
-                .path(pathSegment.startsWith("/") ? pathSegment.substring(1) : pathSegment)
-                .queryParam("format", format)
-                .queryParam("lang", lang)
+                .fromHttpUrl(bundesBaseUrl.endsWith("/") ? bundesBaseUrl : bundesBaseUrl + "/")
+                .pathSegment(apiKey)
+                .queryParam("format", bundesApiFormat)
+                .queryParam("lang", bundesApiLang)
                 .build()
                 .toUriString();
     }
+    @Retryable(
+            value = { ResourceAccessException.class, SocketTimeoutException.class },
+            maxAttempts = RETRY_ATTEMPTS,
+            backoff = @Backoff(delay = DELAY)
+    )
+    private GenericData fetchRates(String url,String currency) {
+        try {
+            var response = restTemplate.getForEntity(url, GenericData.class);
+            GenericData genericData = response.getBody();
+            return genericData;
+        }
+        catch (Exception e) {
+            logger.error("Failed to fetch data from Bundesbank for currency {}: {}", currency, e.getMessage());
+            throw new InvalidRequestException("Unable to retrieve FX rate data. Please try again later.");
+        }
+
+    }
+
 
 
 }

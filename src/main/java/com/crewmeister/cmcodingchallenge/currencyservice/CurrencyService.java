@@ -12,7 +12,7 @@ public interface CurrencyService {
 
     public List<Currency> addCurrency(List<Currency> currency);
 
-    public Map<String, Map<String,String>> getFXRates(String date);
+    public Map<String, Map<String,String>> getFXRates(String date,String currency);
 
     public double getFXAmount(String date, String currency, double amount);
 }
