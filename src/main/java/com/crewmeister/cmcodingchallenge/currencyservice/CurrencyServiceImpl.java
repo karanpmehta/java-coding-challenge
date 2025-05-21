@@ -1,8 +1,6 @@
 package com.crewmeister.cmcodingchallenge.currencyservice;
 
-import com.crewmeister.cmcodingchallenge.currency.CurrencyConstants;
 import com.crewmeister.cmcodingchallenge.currency.CurrencyConversionRates;
-import com.crewmeister.cmcodingchallenge.currencycontroller.CurrencyController;
 import com.crewmeister.cmcodingchallenge.exception.InvalidRequestException;
 import com.crewmeister.cmcodingchallenge.xmldata.GenericData;
 import com.crewmeister.cmcodingchallenge.currency.Currency;
@@ -12,7 +10,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.ResponseEntity;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.retry.annotation.Backoff;
 import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
@@ -20,6 +19,8 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.SocketTimeoutException;
 import java.util.*;
 
@@ -45,29 +46,38 @@ public class CurrencyServiceImpl implements CurrencyService {
     private String bundesApiLang;
 
 
-    public CurrencyServiceImpl(RestTemplate restTemplate) {
-        this.restTemplate = restTemplate;
-    }
-    @Autowired
-    CurrencyRepository currencyRepository;
+    private final CurrencyRepository currencyRepository;
 
+    public CurrencyServiceImpl(RestTemplate restTemplate, CurrencyRepository currencyRepository) {
+        this.restTemplate = restTemplate;
+        this.currencyRepository = currencyRepository;
+    }
+
+
+    @Cacheable("availableCurrencies")
     @Override
     public List<Currency> getListOfAvailableCurrencies() {
         return currencyRepository.findAll();
     }
 
+    @CacheEvict(value = "availableCurrencies", allEntries = true)
     @Override
     public List<Currency> addCurrency(List<Currency> currency) {
         return currencyRepository.saveAll(currency);
+    }
+
+    @Cacheable(value = "currencyByName", key = "currencyName")
+    public Optional<Currency> getCurrencyByName(String currencyName) {
+        return currencyRepository.findCurrencyName(currencyName);
     }
 
     @Override
     public Map<String, Map<String, String>> getFXRates(String date,String currency) {
         List<Currency> currencies = new ArrayList<>();
         if(currency==null ||  currency.isEmpty() )
-            currencies= currencyRepository.findAll();//Assuming DB has values; if not insert values from controller
+            currencies= getListOfAvailableCurrencies();//Assuming DB has values; if not insert values from controller
         else {
-            Optional<Currency> ccy = currencyRepository.findCurrencyName(currency);
+            Optional<Currency> ccy = getCurrencyByName(currency);
             if(ccy.isPresent())
                 currencies.add(ccy.get());
             else{
@@ -89,7 +99,7 @@ public class CurrencyServiceImpl implements CurrencyService {
 
 
             for (Observation obs : genericData.dataSet.series.observations) {
-                if (date == null) {
+                if (date == null || date.isEmpty()) {
                     if (obs.value == null)
                         continue;
                     fxMap.put(obs.dimension.date, obs.value.rate);
@@ -133,7 +143,7 @@ public class CurrencyServiceImpl implements CurrencyService {
             throw new IllegalArgumentException("Conversion rate not found for date " + date);
         }
         logger.info("Conversion rate for {} on {} is {}",currency,date,ccr.getConversionRate());
-        double exchangedAmount = amount/ccr.getConversionRate() ;
+        double exchangedAmount = new BigDecimal(amount/ccr.getConversionRate()).setScale(4, RoundingMode.HALF_UP).doubleValue() ;
 
         return exchangedAmount;
     }
@@ -161,11 +171,9 @@ public class CurrencyServiceImpl implements CurrencyService {
         }
         catch (Exception e) {
             logger.error("Failed to fetch data from Bundesbank for currency {}: {}", currency, e.getMessage());
-            throw new InvalidRequestException("Unable to retrieve FX rate data. Please try again later.");
+            throw new InvalidRequestException("Unable to retrieve FX rate data, please check logs for more details");
         }
 
     }
-
-
 
 }

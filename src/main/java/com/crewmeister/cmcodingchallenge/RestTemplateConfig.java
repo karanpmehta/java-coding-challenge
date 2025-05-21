@@ -20,7 +20,7 @@ public class RestTemplateConfig {
     public RestTemplate restTemplate() {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(connectionTimeout); // in milliseconds
-        factory.setReadTimeout(readTimeout);
+        factory.setReadTimeout(readTimeout); // in milliseconds
         RestTemplate restTemplate = new RestTemplate(factory);
         restTemplate.getMessageConverters().add(new MappingJackson2XmlHttpMessageConverter());
         return restTemplate;

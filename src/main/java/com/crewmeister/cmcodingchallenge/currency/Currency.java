@@ -15,6 +15,14 @@ public class Currency {
     @NotBlank(message = "Currency name must not be blank")
     private String currencyName;
 
+    public Currency() {
+    }
+
+    public Currency(Long currencyId, String currencyName) {
+        this.currencyId = currencyId;
+        this.currencyName = currencyName;
+    }
+
     public Long getCurrencyId() {
         return currencyId;
     }
