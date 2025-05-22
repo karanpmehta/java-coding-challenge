@@ -76,7 +76,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<Object> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
-        String error = String.format("Invalid value '%s' for parameter '%s'. Expected type: %s",
+        String error = String.format("Invalid value '%s' for parameter '%s'. Expected format is yyyy-MM-dd and type: %s",
                 ex.getValue(), ex.getName(), ex.getRequiredType().getSimpleName());
         return new ResponseEntity<>(Map.of("error", error), HttpStatus.BAD_REQUEST);
     }

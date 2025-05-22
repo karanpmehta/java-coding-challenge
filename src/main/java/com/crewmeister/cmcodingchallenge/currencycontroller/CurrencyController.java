@@ -21,7 +21,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController()
-@RequestMapping("/api")
+@RequestMapping("/cmfxapi")
 public class CurrencyController {
 
     private static final Logger logger = LoggerFactory.getLogger(CurrencyController.class);

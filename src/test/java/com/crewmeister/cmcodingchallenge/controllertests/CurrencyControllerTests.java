@@ -1,5 +1,6 @@
 package com.crewmeister.cmcodingchallenge.controllertests;
 
+import com.crewmeister.cmcodingchallenge.security.MyUserDetailsService;
 import com.crewmeister.cmcodingchallenge.currency.CurrencyConstants;
 import com.crewmeister.cmcodingchallenge.currencycontroller.CurrencyController;
 import com.crewmeister.cmcodingchallenge.currencyservice.CurrencyService;
@@ -11,6 +12,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import com.crewmeister.cmcodingchallenge.currency.Currency;
 import org.springframework.http.MediaType;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 
@@ -29,10 +31,16 @@ public class CurrencyControllerTests {
     @MockBean
     CurrencyService currencyService;
 
+    @MockBean
+    private MyUserDetailsService userDetailsService;
+
+    @MockBean
+    private PasswordEncoder passwordEncoder;
+
     @Test
     public void testAddCurrencyWithNoCurrencies() throws Exception {
         mvc.perform(MockMvcRequestBuilders
-                        .post("/api/addCurrencies")
+                        .post("/cmfxapi/addCurrencies")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}")
                         .accept(MediaType.APPLICATION_JSON))
@@ -51,7 +59,7 @@ public class CurrencyControllerTests {
                 "}";
 
         mvc.perform(MockMvcRequestBuilders
-                        .post("/api/addCurrencies")
+                        .post("/cmfxapi/addCurrencies")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(payLoad)
                         .accept(MediaType.APPLICATION_JSON))
@@ -74,7 +82,7 @@ public class CurrencyControllerTests {
                 "}";
 
         mvc.perform(MockMvcRequestBuilders
-                        .post("/api/addCurrencies")
+                        .post("/cmfxapi/addCurrencies")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(payLoad)
                         .accept(MediaType.APPLICATION_JSON))
@@ -92,7 +100,7 @@ public class CurrencyControllerTests {
         Mockito.when(currencyService.getListOfAvailableCurrencies()).thenReturn(currencyList);
 
         mvc.perform(MockMvcRequestBuilders
-                .get("/api/getAllAvailableCurrencies"))
+                .get("/cmfxapi/getAllAvailableCurrencies"))
                 .andExpect(status().isOk())
                 .andExpect(content().string(expected));
     }
@@ -107,7 +115,7 @@ public class CurrencyControllerTests {
 
         String expected = new ObjectMapper().writeValueAsString(enumCurrencies);
         mvc.perform(MockMvcRequestBuilders
-                .get("/api/getAllAvailableCurrencies")
+                .get("/cmfxapi/getAllAvailableCurrencies")
                 .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(content().string(expected));
@@ -124,7 +132,7 @@ public class CurrencyControllerTests {
         String expected = new ObjectMapper().writeValueAsString(fxRateMock);
 
         mvc.perform(MockMvcRequestBuilders
-                 .get("/api/getAllFXRates")
+                 .get("/cmfxapi/getAllFXRates")
                  .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(content().string(expected));
@@ -142,7 +150,7 @@ public class CurrencyControllerTests {
         String expected = new ObjectMapper().writeValueAsString(fxRateMock);
 
         mvc.perform(MockMvcRequestBuilders
-                 .get("/api/getAllFXRates")
+                 .get("/cmfxapi/getAllFXRates")
                  .param("date", date)
                  .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
@@ -160,7 +168,7 @@ public class CurrencyControllerTests {
         String expected = new ObjectMapper().writeValueAsString(fxRateMock);
 
         mvc.perform(MockMvcRequestBuilders
-                        .get("/api/getAllFXRates")
+                        .get("/cmfxapi/getAllFXRates")
                         .param("currency", currency)
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
@@ -179,7 +187,7 @@ public class CurrencyControllerTests {
         String expected = new ObjectMapper().writeValueAsString(fxRateMock);
 
         mvc.perform(MockMvcRequestBuilders
-                        .get("/api/getAllFXRates")
+                        .get("/cmfxapi/getAllFXRates")
                         .param("date", date)
                         .param("currency", currency)
                         .accept(MediaType.APPLICATION_JSON))
@@ -189,9 +197,9 @@ public class CurrencyControllerTests {
 
     @Test
     void testGetAllFXRatesWithInvalidDateFormat() throws Exception {
-        String expected="{\"error\":\"Invalid value '05-05-2025' for parameter 'date'. Expected type: LocalDate\"}";
+        String expected="{\"error\":\"Invalid value '05-05-2025' for parameter 'date'. Expected format is yyyy-MM-dd and type: LocalDate\"}";
         mvc.perform(MockMvcRequestBuilders
-                        .get("/api/getAllFXRates")
+                        .get("/cmfxapi/getAllFXRates")
                         .param("date", "05-05-2025") // invalid format
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isBadRequest())
@@ -202,7 +210,7 @@ public class CurrencyControllerTests {
     void testGetFXAmountWithNullDateInput() throws Exception {
         String expected="{\"date\":\"Date is required\"}";
         mvc.perform(MockMvcRequestBuilders
-                        .get("/api/getFXAmount")
+                        .get("/cmfxapi/getFXAmount")
                         .param("date", "")
                         .param("currency", "INR")
                         .param("amount", "500.0"))
@@ -214,7 +222,7 @@ public class CurrencyControllerTests {
     void testGetFXAmountWithNullCurrencyInput() throws Exception {
         String expected="{\"currency\":\"Currency is required\"}";
         mvc.perform(MockMvcRequestBuilders
-                        .get("/api/getFXAmount")
+                        .get("/cmfxapi/getFXAmount")
                         .param("date", "2025-05-16")
                         .param("currency", "")
                         .param("amount", "500.0"))
@@ -225,7 +233,7 @@ public class CurrencyControllerTests {
     void testGetFXAmountWithNullAmountInput() throws Exception {
         String expected="{\"amount\":\"Failed to convert property value of type 'java.lang.String' to required type 'double' for property 'amount'; nested exception is java.lang.NumberFormatException: empty String\"}";
         mvc.perform(MockMvcRequestBuilders
-                        .get("/api/getFXAmount")
+                        .get("/cmfxapi/getFXAmount")
                         .param("date", "2025-05-16")
                         .param("currency", "INR")
                         .param("amount", ""))
@@ -236,7 +244,7 @@ public class CurrencyControllerTests {
     void testGetFXAmountWithInValidDateInput() throws Exception {
         String expected="{\"date\":\"Date must be a LocalDate in format yyyy-MM-dd\"}";
         mvc.perform(MockMvcRequestBuilders
-                        .get("/api/getFXAmount")
+                        .get("/cmfxapi/getFXAmount")
                         .param("date", "16-05-2025")
                         .param("currency", "INR")
                         .param("amount", "500.0"))
@@ -247,7 +255,7 @@ public class CurrencyControllerTests {
     void testGetFXAmountWithInValidCurrencyInput() throws Exception {
         String expected="{\"currency\":\"Failed to convert property value of type 'java.lang.String' to required type 'com.crewmeister.cmcodingchallenge.currency.CurrencyConstants' for property 'currency'; nested exception is org.springframework.core.convert.ConversionFailedException: Failed to convert from type [java.lang.String] to type [@javax.validation.constraints.NotNull com.crewmeister.cmcodingchallenge.currency.CurrencyConstants] for value 'INS'; nested exception is java.lang.IllegalArgumentException: No enum constant com.crewmeister.cmcodingchallenge.currency.CurrencyConstants.INS\"}";
         mvc.perform(MockMvcRequestBuilders
-                        .get("/api/getFXAmount")
+                        .get("/cmfxapi/getFXAmount")
                         .param("date", "2025-05-16")
                         .param("currency", "INS")
                         .param("amount", "500.0"))
@@ -258,7 +266,7 @@ public class CurrencyControllerTests {
     void testGetFXAmountWithZeroAmountInput() throws Exception {
         String expected="{\"amount\":\"Amount must be a positive number\"}";
         mvc.perform(MockMvcRequestBuilders
-                        .get("/api/getFXAmount")
+                        .get("/cmfxapi/getFXAmount")
                         .param("date", "2025-05-16")
                         .param("currency", "INR")
                         .param("amount", "0"))
@@ -270,7 +278,7 @@ public class CurrencyControllerTests {
     void testGetFXAmountWithNegativeAmountInput() throws Exception {
         String expected="{\"amount\":\"Amount must be a positive number\"}";
         mvc.perform(MockMvcRequestBuilders
-                        .get("/api/getFXAmount")
+                        .get("/cmfxapi/getFXAmount")
                         .param("date", "2025-05-16")
                         .param("currency", "INR")
                         .param("amount", "-500"))
@@ -285,7 +293,7 @@ public class CurrencyControllerTests {
                 .thenReturn(expectedAmount);
 
         mvc.perform(MockMvcRequestBuilders
-                        .get("/api/getFXAmount")
+                        .get("/cmfxapi/getFXAmount")
                         .param("date", "2025-05-16")
                         .param("currency", "INR")
                         .param("amount", "500.0"))
@@ -294,5 +302,12 @@ public class CurrencyControllerTests {
 
     }
 
+    @Test
+    void givenDifferentUrlRequiresAuthCheck() throws Exception {
+        mvc.perform(MockMvcRequestBuilders
+                .get("/secure/test"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrlPattern("**/login"));
+    }
 
 }

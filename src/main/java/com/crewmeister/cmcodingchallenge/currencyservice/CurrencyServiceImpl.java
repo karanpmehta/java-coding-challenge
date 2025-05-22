@@ -85,7 +85,7 @@ public class CurrencyServiceImpl implements CurrencyService {
             }
 
         }
-        Map<String, Map<String, String>> fxMapResult = new HashMap<>();
+        Map<String, Map<String, String>> fxMapResult = new TreeMap<>();
         for(Currency fxcurrency: currencies) {
             logger.info("Processing currency: {}",fxcurrency.getCurrencyName());
             String url = buildUrl(fxcurrency.getCurrencyName());
@@ -95,7 +95,7 @@ public class CurrencyServiceImpl implements CurrencyService {
                 logger.warn("Received empty response for currency {}", fxcurrency.getCurrencyName());
                 continue;
             }
-            Map<String, String> fxMap = new HashMap<>();
+            Map<String, String> fxMap = new TreeMap<>();
 
 
             for (Observation obs : genericData.dataSet.series.observations) {
